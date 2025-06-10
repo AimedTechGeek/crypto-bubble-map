@@ -4,61 +4,79 @@ import * as d3 from 'd3';
 const BubbleChart = ({ data }) => {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
-    // Use a ref to store the simulation so it persists across re-renders
     const simulationRef = useRef(null);
+    const wrapperGRef = useRef(null); // Ref for the zoomable <g> element
 
-    // This effect runs once to initialize the simulation
+    // Effect for one-time setup of simulation, zoom, and resize listeners
     useEffect(() => {
-        if (!containerRef.current) return;
+        if (!svgRef.current || !containerRef.current) return;
 
+        const svg = d3.select(svgRef.current);
         const { width, height } = containerRef.current.getBoundingClientRect();
-
-        // The function that is called on each 'tick' of the simulation
+        
+        // The ticked function updates bubble positions on each simulation step
         const ticked = () => {
-            d3.select(svgRef.current)
-              .selectAll('.bubble-node')
-              .attr("transform", d => `translate(${d.x}, ${d.y})`);
+            if (wrapperGRef.current) {
+                d3.select(wrapperGRef.current)
+                  .selectAll('.bubble-node')
+                  .attr("transform", d => `translate(${d.x}, ${d.y})`);
+            }
         };
-
+        
         // Initialize the D3 force simulation
-        simulationRef.current = d3.forceSimulation()
-            .force('center', d3.forceCenter(width / 2, height / 2).strength(0.02))
-            .force('collide', d3.forceCollide().radius(d => d.radius + 2).strength(0.9))
-            .on("tick", ticked);
+        simulationRef.current = d3.forceSimulation().on("tick", ticked);
 
-        // Resize handler
+        // Create the zoomable wrapper <g> if it doesn't exist yet
+        if (!wrapperGRef.current) {
+            wrapperGRef.current = svg.append("g").node();
+        }
+
+        // Define the zoom handler
+        const zoomHandler = d3.zoom()
+            .scaleExtent([0.5, 8]) // Set min/max zoom levels
+            .on("zoom", (event) => {
+                // Apply the zoom transform to the wrapper group
+                d3.select(wrapperGRef.current).attr("transform", event.transform);
+            });
+
+        // Apply zoom behavior to the main SVG element
+        svg.call(zoomHandler);
+
+        // Resize handler to keep the chart centered
         const handleResize = () => {
             if (!containerRef.current) return;
             const { width, height } = containerRef.current.getBoundingClientRect();
+            d3.select(svgRef.current).attr('width', width).attr('height', height);
+            // Update the center force of the simulation
             simulationRef.current.force('center', d3.forceCenter(width / 2, height / 2));
-            simulationRef.current.alpha(0.3).restart(); // Reheat the simulation on resize
+            simulationRef.current.alpha(0.3).restart(); // Reheat the simulation
         };
         
         window.addEventListener('resize', handleResize);
+        
+        // Set the initial center force
+        handleResize();
 
-        // Cleanup on component unmount
+        // Cleanup function to remove the event listener on component unmount
         return () => window.removeEventListener('resize', handleResize);
 
-    }, []); // Empty dependency array ensures this runs only once
+    }, []); // Empty dependency array ensures this setup runs only once
 
-    // This effect runs whenever the `data` prop changes
+
+    // Effect for handling data updates
     useEffect(() => {
-        if (!data || !svgRef.current || !simulationRef.current || !containerRef.current) return;
-
-        const svg = d3.select(svgRef.current);
-        const simulation = simulationRef.current;
+        if (!data || !simulationRef.current || !wrapperGRef.current || !containerRef.current) return;
         
-        // --- Sizing and Color Scales ---
+        const wrapperG = d3.select(wrapperGRef.current);
+        const simulation = simulationRef.current;
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        
+        // Sizing and Color Scales
         const radiusScale = d3.scaleSqrt().domain([0, d3.max(data, d => d.value)]).range([15, 75]);
         const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([d3.max(data, d => d.value), 0]);
 
-        // --- Smart Node Update ---
-        // Get the old nodes from the simulation and map them by name for easy access.
+        // Preserve existing positions for a smoother animation
         const oldNodeMap = new Map(simulation.nodes().map(d => [d.name, d]));
-        const { width, height } = containerRef.current.getBoundingClientRect();
-
-        // Create the new node data. For existing nodes, we preserve their current position and velocity.
-        // For new nodes, we start them at the center.
         const nodesData = data.map(d => {
             const oldNode = oldNodeMap.get(d.name);
             return {
@@ -71,35 +89,60 @@ const BubbleChart = ({ data }) => {
             };
         });
 
-        // --- D3 Data Join ---
-        const nodes = svg
+        // D3 Data Join on the wrapper <g>
+        const nodes = wrapperG
             .selectAll(".bubble-node")
             .data(nodesData, d => d.name);
 
-        // --- Exit ---
-        // Correctly handle exiting nodes by animating them out before removing.
+        // --- Exit Selection ---
         const nodeExit = nodes.exit();
-        nodeExit.select('.bubble-circle')
-            .transition().duration(400)
-            .attr("r", 0);
-        nodeExit.selectAll('text')
-            .transition().duration(300)
-            .style("opacity", 0);
+        // **FIX:** Add a class to exiting nodes to prevent clicks during removal.
+        nodeExit.classed("exiting", true);
+        nodeExit.select('.bubble-circle').transition().duration(400).attr("r", 0);
+        nodeExit.selectAll('text').transition().duration(300).style("opacity", 0);
         nodeExit.transition().delay(400).remove();
         
-        // --- Enter ---
+        // --- Enter Selection ---
         const nodeEnter = nodes.enter()
             .append("g")
             .attr("class", "bubble-node")
-            .attr('transform', d => `translate(${d.x}, ${d.y})`); // Start new nodes at their initial position (center)
+            .style("cursor", "pointer") // Add pointer cursor to indicate clickability
+            .attr('transform', d => `translate(${d.x}, ${d.y})`)
+            .on('click', (event, d) => {
+                const groupElement = d3.select(event.currentTarget);
+                // **FIX:** If the node is exiting, do not proceed.
+                if (groupElement.classed("exiting")) {
+                    return;
+                }
+
+                // Copy the bubble name to the clipboard
+                navigator.clipboard.writeText(d.name).then(() => {
+                    // **FIX:** Double-check if the node started exiting while clipboard was working.
+                    if (groupElement.classed("exiting")) {
+                        return;
+                    }
+                    // Provide visual feedback on successful copy
+                    const circle = groupElement.select('.bubble-circle');
+                    const originalColor = circle.style('fill');
+                    circle.transition()
+                        .duration(150)
+                        .style('fill', '#4ade80') // Flash green
+                        .transition()
+                        .duration(300)
+                        .delay(200)
+                        .style('fill', originalColor); // Return to original color
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            });
 
         nodeEnter.append("circle")
             .attr("class", "bubble-circle")
-            .attr("r", 0) // Start with radius 0 for grow-in animation
+            .attr("r", 0)
             .style("fill", d => colorScale(d.value))
             .transition().duration(1000)
             .attr("r", d => d.radius);
-
+            
         nodeEnter.append("text")
             .attr("class", "bubble-text")
             .attr("dy", "-0.2em")
@@ -117,22 +160,23 @@ const BubbleChart = ({ data }) => {
             .transition().duration(1000).delay(200)
             .style("opacity", 1)
             .style("font-size", d => Math.max(7, Math.min(d.radius / d.name.length * 1.8, 18)) + 'px');
-        
-        // --- Update ---
-        // For existing nodes, just update their radius if it changed
+
+        // --- Update Selection ---
         nodes.select('.bubble-circle')
              .transition().duration(1000)
              .attr('r', d => d.radius);
         
-        // Update the simulation with the new nodes
-        simulation.nodes(nodesData);
+        // Update the simulation with new nodes and forces
+        simulation.nodes(nodesData)
+            .force('collide', d3.forceCollide().radius(d => d.radius + 2).strength(0.9));
+        
         simulation.alpha(0.3).restart();
 
     }, [data]);
 
     return (
         <div ref={containerRef} className="relative w-full h-full">
-            <svg ref={svgRef} className="absolute top-0 left-0 w-full h-full" />
+            <svg ref={svgRef} className="absolute top-0 left-0 w-full h-full cursor-grab active:cursor-grabbing" />
         </div>
     );
 };
