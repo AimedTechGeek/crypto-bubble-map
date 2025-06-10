@@ -41,10 +41,10 @@ export default function Home() {
                 <meta name="description" content="A bubble map visualization built with Next.js and D3.js" />
                 <link rel="icon" href="/favicon.ico" />
             </Head>
-            <div className="flex flex-col md:flex-row h-screen bg-gray-100 font-sans">
+            <div className="flex flex-row h-screen bg-gray-100 font-sans">
                 
                 {/* FIXED: Added flex-grow and min-h-0 to ensure this section fills remaining space */}
-                <main className="flex-grow min-h-0 w-full md:w-3/4 p-6 flex items-center justify-center">
+                <main className="flex-grow min-h-0 p-6 flex items-center justify-center overflow-auto">
                     <div 
                         className="relative w-full h-full max-h-[calc(100vh-3rem)] aspect-video rounded-lg shadow-lg"
                         style={{
@@ -54,11 +54,13 @@ export default function Home() {
                         <BubbleChart data={mapData} />
                     </div>
                 </main>
-                <Controls 
-                    onAddBubble={handleAddBubble}
-                    onClear={handleClearBubbles}
-                    onPopulateSample={handlePopulateSample}
-                />
+                <div className="max-w-sm md:w-1/4 flex-shrink-0">
+                    <Controls 
+                        onAddBubble={handleAddBubble}
+                        onClear={handleClearBubbles}
+                        onPopulateSample={handlePopulateSample}
+                    />
+                </div>
             </div>
         </>
     );

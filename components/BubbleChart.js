@@ -4,85 +4,129 @@ import * as d3 from 'd3';
 const BubbleChart = ({ data }) => {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
+    // Use a ref to store the simulation so it persists across re-renders
+    const simulationRef = useRef(null);
 
+    // This effect runs once to initialize the simulation
     useEffect(() => {
-        if (!data || !svgRef.current || !containerRef.current) return;
+        if (!containerRef.current) return;
 
-        const container = containerRef.current;
-        const { width, height } = container.getBoundingClientRect();
-        const diameter = Math.min(width, height);
+        const { width, height } = containerRef.current.getBoundingClientRect();
 
-        const svg = d3.select(svgRef.current)
-            .attr('width', width)
-            .attr('height', height);
+        // The function that is called on each 'tick' of the simulation
+        const ticked = () => {
+            d3.select(svgRef.current)
+              .selectAll('.bubble-node')
+              .attr("transform", d => `translate(${d.x}, ${d.y})`);
+        };
 
-        // Clear previous render
-        svg.selectAll("*").remove(); 
+        // Initialize the D3 force simulation
+        simulationRef.current = d3.forceSimulation()
+            .force('center', d3.forceCenter(width / 2, height / 2).strength(0.02))
+            .force('collide', d3.forceCollide().radius(d => d.radius + 2).strength(0.9))
+            .on("tick", ticked);
+
+        // Resize handler
+        const handleResize = () => {
+            if (!containerRef.current) return;
+            const { width, height } = containerRef.current.getBoundingClientRect();
+            simulationRef.current.force('center', d3.forceCenter(width / 2, height / 2));
+            simulationRef.current.alpha(0.3).restart(); // Reheat the simulation on resize
+        };
         
-        const g = svg.append("g").attr("transform", `translate(${width / 2}, ${height / 2})`);
+        window.addEventListener('resize', handleResize);
 
-        if (data.length === 0) return;
+        // Cleanup on component unmount
+        return () => window.removeEventListener('resize', handleResize);
 
-        const pack = d3.pack()
-            .size([diameter - 10, diameter - 10]) // a little padding
-            .padding(5);
+    }, []); // Empty dependency array ensures this runs only once
 
-        const root = d3.hierarchy({ children: data })
-            .sum(d => d.value);
+    // This effect runs whenever the `data` prop changes
+    useEffect(() => {
+        if (!data || !svgRef.current || !simulationRef.current || !containerRef.current) return;
 
-        const packedData = pack(root).leaves();
+        const svg = d3.select(svgRef.current);
+        const simulation = simulationRef.current;
+        
+        // --- Sizing and Color Scales ---
+        const radiusScale = d3.scaleSqrt().domain([0, d3.max(data, d => d.value)]).range([15, 75]);
         const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([d3.max(data, d => d.value), 0]);
 
-        const nodes = g.selectAll(".bubble-node")
-            .data(packedData, d => d.data.name)
-            .join(
-                enter => {
-                    const nodeEnter = enter.append("g")
-                        .attr("class", "bubble-node")
-                        .attr("transform", d => `translate(${d.x - (diameter/2)}, ${d.y - (diameter/2)})`);
+        // --- Smart Node Update ---
+        // Get the old nodes from the simulation and map them by name for easy access.
+        const oldNodeMap = new Map(simulation.nodes().map(d => [d.name, d]));
+        const { width, height } = containerRef.current.getBoundingClientRect();
 
-                    nodeEnter.append("circle")
-                        .attr("class", "bubble-circle")
-                        .attr("r", 0)
-                        .style("fill", d => colorScale(d.data.value))
-                        .transition().duration(1000)
-                        .attr("r", d => d.r);
+        // Create the new node data. For existing nodes, we preserve their current position and velocity.
+        // For new nodes, we start them at the center.
+        const nodesData = data.map(d => {
+            const oldNode = oldNodeMap.get(d.name);
+            return {
+                ...d,
+                radius: radiusScale(d.value),
+                x: oldNode ? oldNode.x : width / 2,
+                y: oldNode ? oldNode.y : height / 2,
+                vx: oldNode ? oldNode.vx : 0,
+                vy: oldNode ? oldNode.vy : 0,
+            };
+        });
 
-                    nodeEnter.append("text")
-                        .attr("class", "bubble-text")
-                        .attr("dy", "-0.2em")
-                        .style("opacity", 0)
-                        .text(d => d.data.name)
-                        .transition().duration(1000).delay(200)
-                        .style("opacity", 1)
-                        .style("font-size", d => Math.max(8, Math.min(d.r / d.data.name.length * 2.2, 20)) + 'px');
+        // --- D3 Data Join ---
+        const nodes = svg
+            .selectAll(".bubble-node")
+            .data(nodesData, d => d.name);
 
-                    nodeEnter.append("text")
-                        .attr("class", "bubble-value-text")
-                        .attr("dy", "1.0em")
-                        .style("opacity", 0)
-                        .text(d => d.data.value)
-                        .transition().duration(1000).delay(200)
-                        .style("opacity", 1)
-                        .style("font-size", d => Math.max(7, Math.min(d.r / d.data.name.length * 1.8, 18)) + 'px');
+        // --- Exit ---
+        // Correctly handle exiting nodes by animating them out before removing.
+        const nodeExit = nodes.exit();
+        nodeExit.select('.bubble-circle')
+            .transition().duration(400)
+            .attr("r", 0);
+        nodeExit.selectAll('text')
+            .transition().duration(300)
+            .style("opacity", 0);
+        nodeExit.transition().delay(400).remove();
+        
+        // --- Enter ---
+        const nodeEnter = nodes.enter()
+            .append("g")
+            .attr("class", "bubble-node")
+            .attr('transform', d => `translate(${d.x}, ${d.y})`); // Start new nodes at their initial position (center)
 
-                    return nodeEnter;
-                },
-                update => {
-                    update.transition().duration(1000)
-                         .attr("transform", d => `translate(${d.x - (diameter/2)}, ${d.y - (diameter/2)})`);
-                    update.select('.bubble-circle').transition().duration(1000)
-                         .attr("r", d => d.r)
-                         .style("fill", d => colorScale(d.data.value));
-                    return update;
-                },
-                exit => {
-                    exit.select('.bubble-circle').transition().duration(400).attr("r", 0);
-                    exit.selectAll('text').transition().duration(300).style("opacity", 0);
-                    exit.transition().delay(400).remove();
-                    return exit;
-                }
-            );
+        nodeEnter.append("circle")
+            .attr("class", "bubble-circle")
+            .attr("r", 0) // Start with radius 0 for grow-in animation
+            .style("fill", d => colorScale(d.value))
+            .transition().duration(1000)
+            .attr("r", d => d.radius);
+
+        nodeEnter.append("text")
+            .attr("class", "bubble-text")
+            .attr("dy", "-0.2em")
+            .style("opacity", 0)
+            .text(d => d.name)
+            .transition().duration(1000).delay(200)
+            .style("opacity", 1)
+            .style("font-size", d => Math.max(8, Math.min(d.radius / d.name.length * 2.2, 20)) + 'px');
+
+        nodeEnter.append("text")
+            .attr("class", "bubble-value-text")
+            .attr("dy", "1.0em")
+            .style("opacity", 0)
+            .text(d => d.value)
+            .transition().duration(1000).delay(200)
+            .style("opacity", 1)
+            .style("font-size", d => Math.max(7, Math.min(d.radius / d.name.length * 1.8, 18)) + 'px');
+        
+        // --- Update ---
+        // For existing nodes, just update their radius if it changed
+        nodes.select('.bubble-circle')
+             .transition().duration(1000)
+             .attr('r', d => d.radius);
+        
+        // Update the simulation with the new nodes
+        simulation.nodes(nodesData);
+        simulation.alpha(0.3).restart();
 
     }, [data]);
 
