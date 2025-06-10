@@ -124,13 +124,23 @@ const BubbleChart = ({ data }) => {
                     // Provide visual feedback on successful copy
                     const circle = groupElement.select('.bubble-circle');
                     const originalColor = circle.style('fill');
-                    circle.transition()
+                    const originalTransform = groupElement.attr('transform');
+                    
+                    // Enlarge and flash green
+                    groupElement.transition()
                         .duration(150)
-                        .style('fill', '#4ade80') // Flash green
-                        .transition()
-                        .duration(300)
+                        .attr("transform", `${originalTransform} scale(1.1)`)
+                        .select('.bubble-circle')
+                        .style('fill', '#4ade80');
+                        
+                    // Return to original state
+                    groupElement.transition()
                         .delay(200)
-                        .style('fill', originalColor); // Return to original color
+                        .duration(300)
+                        .attr("transform", originalTransform)
+                        .select('.bubble-circle')
+                        .style('fill', originalColor);
+
                 }).catch(err => {
                     console.error('Failed to copy text: ', err);
                 });
