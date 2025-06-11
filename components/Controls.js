@@ -1,3 +1,4 @@
+import { useState } from 'react';
 
 // Function to generate a random string of a given length
 function generateRandomString(length) {
@@ -16,7 +17,9 @@ function generateRandomNumber(min, max) {
 }
 
 const Controls = ({ onAddBubble, onClear, onPopulateSample }) => {
-   
+    const [name, setName] = useState('');
+    const [value, setValue] = useState('');
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
@@ -25,6 +28,13 @@ const Controls = ({ onAddBubble, onClear, onPopulateSample }) => {
         const randomNumber = generateRandomNumber(1, 200);
         console.log(`Adding bubble with name: ${randomString}, value: ${randomNumber}`);
         onAddBubble({ name: randomString, value: randomNumber });
+    };
+
+    const handleUpdateSubmit = (e) => {
+        e.preventDefault();
+        if (name && value > 0) {
+            onAddBubble({ name, value: +value });
+        }
     };
 
     return (
@@ -40,6 +50,37 @@ const Controls = ({ onAddBubble, onClear, onPopulateSample }) => {
 
             <hr className="my-6 border-gray-200" />
 
+            <form onSubmit={handleUpdateSubmit} className="space-y-4">
+                <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700">Location Name</label>
+                    <input
+                        type="text"
+                        id="name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="mt-1 block w-full bg-gray-50 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="e.g., New York"
+                        required
+                    />
+                </div>
+                <div>
+                    <label htmlFor="value" className="block text-sm font-medium text-gray-700">Value (determines size)</label>
+                    <input
+                        type="number"
+                        id="value"
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        min="1"
+                        className="mt-1 block w-full bg-gray-50 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="e.g., 50"
+                        required
+                    />
+                </div>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                    Update Bubble
+                </button>
+            </form>
+            <hr className="my-6 border-gray-200" />
             <div className="space-y-2">
                 <button onClick={onClear} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">
                     Clear Map

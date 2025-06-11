@@ -13,25 +13,41 @@ const sampleData = [
 
 export default function Home() {
     const [mapData, setMapData] = useState([]);
+    // State to track the name of the bubble that was just updated
+    const [updatedBubbleName, setUpdatedBubbleName] = useState(null);
+
 
     useEffect(() => {
         setMapData([...sampleData]);
     }, []);
 
     const handleAddBubble = (newBubble) => {
-        if (!mapData.some(d => d.name === newBubble.name)) {
-            setMapData(prevData => [...prevData, newBubble]);
+        setUpdatedBubbleName(null); // Clear previous update before starting a new one
+        const bubbleExists = mapData.some(d => d.name === newBubble.name);
+
+        if (bubbleExists) {
+            // If the bubble exists, update its value in the data array
+            setMapData(prevData =>
+                prevData.map(d =>
+                    d.name === newBubble.name ? { ...d, value: newBubble.value } : d
+                )
+            );
+            // Set the name of the bubble to be reset in the simulation
+            setUpdatedBubbleName(newBubble.name);
         } else {
-            alert("Bubble with that name already exists.");
+            // If it's a new bubble, just add it to the array
+            setMapData(prevData => [...prevData, newBubble]);
         }
     };
 
     const handleClearBubbles = () => {
         setMapData([]);
+        setUpdatedBubbleName(null);
     };
 
     const handlePopulateSample = () => {
         setMapData([...sampleData]);
+        setUpdatedBubbleName(null);
     };
 
     return (
@@ -51,9 +67,11 @@ export default function Home() {
                             backgroundSize: 'cover'
                         }}
                     >
-                        <BubbleChart data={mapData} />
+                        {/* Pass the updatedBubbleName as a prop to the chart */}
+                        <BubbleChart data={mapData} updatedBubbleName={updatedBubbleName} />
                     </div>
                 </main>
+
                 <div className="max-w-sm md:w-1/4 flex-shrink-0">
                     <Controls 
                         onAddBubble={handleAddBubble}

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-const BubbleChart = ({ data }) => {
+const BubbleChart = ({ data, updatedBubbleName }) => {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const simulationRef = useRef(null);
@@ -12,7 +12,6 @@ const BubbleChart = ({ data }) => {
         if (!svgRef.current || !containerRef.current) return;
 
         const svg = d3.select(svgRef.current);
-        const { width, height } = containerRef.current.getBoundingClientRect();
         
         // The ticked function updates bubble positions on each simulation step
         const ticked = () => {
@@ -79,13 +78,16 @@ const BubbleChart = ({ data }) => {
         const oldNodeMap = new Map(simulation.nodes().map(d => [d.name, d]));
         const nodesData = data.map(d => {
             const oldNode = oldNodeMap.get(d.name);
+            // Check if the current bubble is the one that was just updated
+            const shouldReset = d.name === updatedBubbleName;
             return {
                 ...d,
                 radius: radiusScale(d.value),
-                x: oldNode ? oldNode.x : width / 2,
-                y: oldNode ? oldNode.y : height / 2,
-                vx: oldNode ? oldNode.vx : 0,
-                vy: oldNode ? oldNode.vy : 0,
+                // If it should be reset, start it at the center. Otherwise, keep its old position.
+                x: (oldNode && !shouldReset) ? oldNode.x : width / 2,
+                y: (oldNode && !shouldReset) ? oldNode.y : height / 2,
+                vx: (oldNode && !shouldReset) ? oldNode.vx : 0,
+                vy: (oldNode && !shouldReset) ? oldNode.vy : 0,
             };
         });
 
@@ -146,35 +148,41 @@ const BubbleChart = ({ data }) => {
                 });
             });
 
+        // Append elements for ENTERING nodes
         nodeEnter.append("circle")
             .attr("class", "bubble-circle")
-            .attr("r", 0)
-            .style("fill", d => colorScale(d.value))
-            .transition().duration(1000)
-            .attr("r", d => d.radius);
+            .attr("r", 0);
             
         nodeEnter.append("text")
             .attr("class", "bubble-text")
             .attr("dy", "-0.2em")
-            .style("opacity", 0)
-            .text(d => d.name)
-            .transition().duration(1000).delay(200)
-            .style("opacity", 1)
-            .style("font-size", d => Math.max(8, Math.min(d.radius / d.name.length * 2.2, 20)) + 'px');
+            .style("opacity", 0);
 
         nodeEnter.append("text")
             .attr("class", "bubble-value-text")
             .attr("dy", "1.0em")
-            .style("opacity", 0)
-            .text(d => d.value)
-            .transition().duration(1000).delay(200)
-            .style("opacity", 1)
-            .style("font-size", d => Math.max(7, Math.min(d.radius / d.name.length * 1.8, 18)) + 'px');
+            .style("opacity", 0);
 
-        // --- Update Selection ---
-        nodes.select('.bubble-circle')
+        // --- MERGE Enter and Update selections ---
+        const mergedNodes = nodeEnter.merge(nodes);
+
+        // --- Apply styles and transitions to ALL nodes (new and old) ---
+        mergedNodes.select('.bubble-circle')
              .transition().duration(1000)
-             .attr('r', d => d.radius);
+             .attr("r", d => d.radius)
+             .style("fill", d => colorScale(d.value));
+
+        mergedNodes.select('.bubble-text')
+            .text(d => d.name)
+            .transition().duration(1000)
+            .style("opacity", 1)
+            .style("font-size", d => Math.max(8, Math.min(d.radius / d.name.length * 2.2, 20)) + 'px');
+        
+        mergedNodes.select('.bubble-value-text')
+             .text(d => d.value)
+             .transition().duration(1000)
+             .style("opacity", 1)
+             .style("font-size", d => Math.max(7, Math.min(d.radius / d.name.length * 1.8, 18)) + 'px');
         
         // Update the simulation with new nodes and forces
         simulation.nodes(nodesData)
@@ -182,7 +190,7 @@ const BubbleChart = ({ data }) => {
         
         simulation.alpha(0.3).restart();
 
-    }, [data]);
+    }, [data, updatedBubbleName]); // Add updatedBubbleName to the dependency array
 
     return (
         <div ref={containerRef} className="relative w-full h-full">
