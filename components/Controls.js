@@ -1,33 +1,15 @@
 import { useState } from 'react';
-
-// Function to generate a random string of a given length
-function generateRandomString(length) {
-    let result = '';
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-    const charactersLength = characters.length;
-    for (let i = 0; i < length; i++) {
-        result += characters.charAt(Math.floor(Math.random() * charactersLength));
-    }
-    return result;
-}
-
-// Function to generate a random number in a given range
-function generateRandomNumber(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+import { generateRandomBubble } from '../utils/dataGenerators';
 
 const Controls = ({ onAddBubble, onClear, onPopulateSample }) => {
     const [name, setName] = useState('');
-    const [value, setValue] = useState('');
-
-    const handleSubmit = (e) => {
+    const [value, setValue] = useState('');    const handleSubmit = (e) => {
         e.preventDefault();
 
-        // Generate the random values
-        const randomString = generateRandomString(4);
-        const randomNumber = generateRandomNumber(1, 200);
-        console.log(`Adding bubble with name: ${randomString}, value: ${randomNumber}`);
-        onAddBubble({ name: randomString, value: randomNumber });
+        // Generate random bubble data using utility function
+        const randomBubble = generateRandomBubble();
+        console.log(`Adding bubble with name: ${randomBubble.name}, value: ${randomBubble.value}`);
+        onAddBubble(randomBubble);
     };
 
     const handleUpdateSubmit = (e) => {

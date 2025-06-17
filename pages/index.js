@@ -1,53 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import Head from 'next/head';
 import Controls from '../components/Controls';
 import BubbleChart from '../components/BubbleChart';
-
-const sampleData = [
-    { name: 'Tokyo', value: 90 }, { name: 'New York', value: 80 },
-    { name: 'London', value: 70 }, { name: 'Beijing', value: 85 },
-    { name: 'Sydney', value: 60 }, { name: 'São Paulo', value: 75 },
-    { name: 'Cairo', value: 25 }, { name: 'Moscow', value: 50 },
-    { name: 'Delhi', value: 95 }, { name: 'Mexico City', value: 65 },
-];
+import { useBubbleState } from '../hooks/useBubbleState';
+import { useExternalBubbleEvents } from '../hooks/useExternalBubbleEvents';
+import { SAMPLE_BUBBLE_DATA } from '../constants/sampleData';
 
 export default function Home() {
-    const [mapData, setMapData] = useState([]);
-    // State to track the name of the bubble that was just updated
-    const [updatedBubbleName, setUpdatedBubbleName] = useState(null);
+    // Use custom hook for bubble state management
+    const {
+        mapData,
+        updatedBubbleName,
+        addOrUpdateBubble,
+        clearBubbles,
+        populateWithSampleData
+    } = useBubbleState([]);
 
+    // Use custom hook for external event handling
+    useExternalBubbleEvents(addOrUpdateBubble, [mapData]);
 
+    // Initialize with sample data on mount
     useEffect(() => {
-        setMapData([...sampleData]);
-    }, []);
+        populateWithSampleData(SAMPLE_BUBBLE_DATA);
+    }, [populateWithSampleData]);
 
-    const handleAddBubble = (newBubble) => {
-        setUpdatedBubbleName(null); // Clear previous update before starting a new one
-        const bubbleExists = mapData.some(d => d.name === newBubble.name);
-
-        if (bubbleExists) {
-            // If the bubble exists, update its value in the data array
-            setMapData(prevData =>
-                prevData.map(d =>
-                    d.name === newBubble.name ? { ...d, value: newBubble.value } : d
-                )
-            );
-            // Set the name of the bubble to be reset in the simulation
-            setUpdatedBubbleName(newBubble.name);
-        } else {
-            // If it's a new bubble, just add it to the array
-            setMapData(prevData => [...prevData, newBubble]);
-        }
-    };
-
-    const handleClearBubbles = () => {
-        setMapData([]);
-        setUpdatedBubbleName(null);
-    };
-
+    // Handle populating sample data
     const handlePopulateSample = () => {
-        setMapData([...sampleData]);
-        setUpdatedBubbleName(null);
+        populateWithSampleData(SAMPLE_BUBBLE_DATA);
     };
 
     return (
@@ -59,7 +38,6 @@ export default function Home() {
             </Head>
             <div className="flex flex-row h-screen bg-gray-100 font-sans">
                 
-                {/* FIXED: Added flex-grow and min-h-0 to ensure this section fills remaining space */}
                 <main className="flex-grow min-h-0 p-6 flex items-center justify-center overflow-auto">
                     <div 
                         className="relative w-full h-full max-h-[calc(100vh-3rem)] aspect-video rounded-lg shadow-lg"
@@ -67,15 +45,14 @@ export default function Home() {
                             backgroundSize: 'cover'
                         }}
                     >
-                        {/* Pass the updatedBubbleName as a prop to the chart */}
                         <BubbleChart data={mapData} updatedBubbleName={updatedBubbleName} />
                     </div>
                 </main>
 
                 <div className="max-w-sm md:w-1/4 flex-shrink-0">
                     <Controls 
-                        onAddBubble={handleAddBubble}
-                        onClear={handleClearBubbles}
+                        onAddBubble={addOrUpdateBubble}
+                        onClear={clearBubbles}
                         onPopulateSample={handlePopulateSample}
                     />
                 </div>
