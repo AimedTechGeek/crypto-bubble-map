@@ -35,8 +35,14 @@ export function generateRandomNumber(min, max) {
  * @returns {object} Random bubble data
  */
 export function generateRandomBubble(nameLength = 4, minValue = 1, maxValue = 200) {
+    const name = generateRandomString(nameLength);
     return {
-        name: generateRandomString(nameLength),
-        value: generateRandomNumber(minValue, maxValue)
+        name,
+        value: generateRandomNumber(minValue, maxValue),
+        type: 'random',
+        url: `https://www.google.com/search?q=${encodeURIComponent(name)}`,
+        metadata: {
+            description: `Random generated bubble: ${name}`
+        }
     };
 }

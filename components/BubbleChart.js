@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import { handleBubbleClick, getBubbleTooltip, cleanupClickTimeouts } from '../utils/bubbleInteractions';
 
 const BubbleChart = ({ data, updatedBubbleName }) => {
     const svgRef = useRef(null);
@@ -54,10 +55,11 @@ const BubbleChart = ({ data, updatedBubbleName }) => {
         window.addEventListener('resize', handleResize);
         
         // Set the initial center force
-        handleResize();
-
-        // Cleanup function to remove the event listener on component unmount
-        return () => window.removeEventListener('resize', handleResize);
+        handleResize();        // Cleanup function to remove the event listener on component unmount
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            cleanupClickTimeouts(); // Clean up any pending click timeouts
+        };
 
     }, []); // Empty dependency array ensures this setup runs only once
 
@@ -69,10 +71,24 @@ const BubbleChart = ({ data, updatedBubbleName }) => {
         const wrapperG = d3.select(wrapperGRef.current);
         const simulation = simulationRef.current;
         const { width, height } = containerRef.current.getBoundingClientRect();
-        
-        // Sizing and Color Scales
+          // Sizing and Color Scales
         const radiusScale = d3.scaleSqrt().domain([0, d3.max(data, d => d.value)]).range([15, 75]);
-        const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([d3.max(data, d => d.value), 0]);
+        
+        // Enhanced color scale based on bubble type
+        const getColorScale = (bubbleType) => {
+            switch (bubbleType) {
+                case 'crypto':
+                    return d3.scaleSequential(d3.interpolateOranges).domain([d3.max(data, d => d.value), 0]);
+                case 'stock':
+                    return d3.scaleSequential(d3.interpolateGreens).domain([d3.max(data, d => d.value), 0]);
+                case 'city':
+                    return d3.scaleSequential(d3.interpolateBlues).domain([d3.max(data, d => d.value), 0]);
+                case 'weather':
+                    return d3.scaleSequential(d3.interpolateBuPu).domain([d3.max(data, d => d.value), 0]);
+                default:
+                    return d3.scaleSequential(d3.interpolateViridis).domain([d3.max(data, d => d.value), 0]);
+            }
+        };
 
         // Preserve existing positions for a smoother animation
         const oldNodeMap = new Map(simulation.nodes().map(d => [d.name, d]));
@@ -102,50 +118,45 @@ const BubbleChart = ({ data, updatedBubbleName }) => {
         nodeExit.classed("exiting", true);
         nodeExit.select('.bubble-circle').transition().duration(400).attr("r", 0);
         nodeExit.selectAll('text').transition().duration(300).style("opacity", 0);
-        nodeExit.transition().delay(400).remove();
-        
-        // --- Enter Selection ---
+        nodeExit.transition().delay(400).remove();        // --- Enter Selection ---
         const nodeEnter = nodes.enter()
             .append("g")
             .attr("class", "bubble-node")
             .style("cursor", "pointer") // Add pointer cursor to indicate clickability
             .attr('transform', d => `translate(${d.x}, ${d.y})`)
-            .on('click', (event, d) => {
-                const groupElement = d3.select(event.currentTarget);
-                // **FIX:** If the node is exiting, do not proceed.
+            .on('click', function(event, d) {
+                // Use 'this' instead of event.currentTarget for better reliability
+                const currentElement = this;
+                const groupElement = d3.select(currentElement);
+                
+                // If the node is exiting, do not proceed
                 if (groupElement.classed("exiting")) {
                     return;
                 }
-
-                // Copy the bubble name to the clipboard
-                navigator.clipboard.writeText(d.name).then(() => {
-                    // **FIX:** Double-check if the node started exiting while clipboard was working.
-                    if (groupElement.classed("exiting")) {
-                        return;
-                    }
-                    // Provide visual feedback on successful copy
-                    const circle = groupElement.select('.bubble-circle');
-                    const originalColor = circle.style('fill');
-                    const originalTransform = groupElement.attr('transform');
-                    
-                    // Enlarge and flash green
-                    groupElement.transition()
-                        .duration(150)
-                        .attr("transform", `${originalTransform} scale(1.1)`)
-                        .select('.bubble-circle')
-                        .style('fill', '#4ade80');
-                        
-                    // Return to original state
-                    groupElement.transition()
-                        .delay(200)
-                        .duration(300)
-                        .attr("transform", originalTransform)
-                        .select('.bubble-circle')
-                        .style('fill', originalColor);
-
-                }).catch(err => {
-                    console.error('Failed to copy text: ', err);
+                
+                // Create a mock event object with the current element
+                const safeEvent = {
+                    ...event,
+                    currentTarget: currentElement,
+                    detail: event.detail || 1
+                };
+                
+                // Use the new enhanced click handler
+                handleBubbleClick(d, safeEvent, {
+                    enableNavigation: true,
+                    enableCopyToClipboard: true
                 });
+            })
+            .on('mouseover', function(event, d) {
+                // Add tooltip on hover
+                const tooltip = getBubbleTooltip(d);
+                d3.select(this)
+                    .select('title')
+                    .remove(); // Remove existing title
+                    
+                d3.select(this)
+                    .append('title')
+                    .text(tooltip);
             });
 
         // Append elements for ENTERING nodes
@@ -161,16 +172,62 @@ const BubbleChart = ({ data, updatedBubbleName }) => {
         nodeEnter.append("text")
             .attr("class", "bubble-value-text")
             .attr("dy", "1.0em")
-            .style("opacity", 0);
-
-        // --- MERGE Enter and Update selections ---
-        const mergedNodes = nodeEnter.merge(nodes);
-
-        // --- Apply styles and transitions to ALL nodes (new and old) ---
+            .style("opacity", 0);        // --- MERGE Enter and Update selections ---
+        const mergedNodes = nodeEnter.merge(nodes);        // Ensure click handlers are applied to all nodes (including updated ones)
+        mergedNodes
+            .style("cursor", "pointer")
+            .on('click', function(event, d) {
+                // Use 'this' instead of event.currentTarget for better reliability
+                const currentElement = this;
+                const groupElement = d3.select(currentElement);
+                
+                // If the node is exiting, do not proceed
+                if (groupElement.classed("exiting")) {
+                    return;
+                }
+                
+                // Create a mock event object with the current element
+                const safeEvent = {
+                    ...event,
+                    currentTarget: currentElement,
+                    detail: event.detail || 1
+                };
+                
+                // Use the new enhanced click handler
+                handleBubbleClick(d, safeEvent, {
+                    enableNavigation: true,
+                    enableCopyToClipboard: true
+                });
+            })
+            .on('mouseover', function(event, d) {
+                // Add tooltip on hover
+                const tooltip = getBubbleTooltip(d);
+                d3.select(this)
+                    .select('title')
+                    .remove(); // Remove existing title
+                    
+                d3.select(this)
+                    .append('title')
+                    .text(tooltip);
+            });// --- Apply styles and transitions to ALL nodes (new and old) ---
         mergedNodes.select('.bubble-circle')
              .transition().duration(1000)
              .attr("r", d => d.radius)
-             .style("fill", d => colorScale(d.value));
+             .style("fill", d => {
+                 const colorScale = getColorScale(d.type);
+                 return colorScale(d.value);
+             })
+             .style("stroke", d => {
+                 // Add stroke based on bubble type for better visual distinction
+                 switch (d.type) {
+                     case 'crypto': return '#f59e0b';
+                     case 'stock': return '#10b981';
+                     case 'city': return '#3b82f6';
+                     case 'weather': return '#06b6d4';
+                     default: return '#6b7280';
+                 }
+             })
+             .style("stroke-width", d => d.url ? 2 : 1); // Thicker stroke for clickable bubbles
 
         mergedNodes.select('.bubble-text')
             .text(d => d.name)
